@@ -15,6 +15,8 @@ const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID || null;
 const ADMIN_ONLY_ROLE_ID = process.env.ADMIN_ONLY_ROLE_ID || null;
 const EVENTS_ROLE_ID = process.env.EVENTS_ROLE_ID || null;
 const PARTNER_MANAGER_ROLE_ID = process.env.PARTNER_MANAGER_ROLE_ID || null;
+const CLIENTS_ROLE_ID = process.env.CLIENTS_ROLE_ID || null; // can open all tickets
+const UNVERIFIED_ROLE_ID = process.env.UNVERIFIED_ROLE_ID || null; // limited to support/admin
 
 const CATEGORY_MAP = {
   commission: process.env.COMMISSION_CATEGORY_ID,
@@ -31,9 +33,11 @@ const PANEL_CHANNELS = {
   application: process.env.APPLICATION_PANEL_ID
 };
 
+// Map ticket type -> manager role. Include admin role so admins always have access to admin tickets.
 const MANAGER_ROLE_BY_TYPE = {
   partnership: PARTNER_MANAGER_ROLE_ID,
-  event: EVENTS_ROLE_ID
+  event: EVENTS_ROLE_ID,
+  admin: ADMIN_ONLY_ROLE_ID
 };
 
 function buildPanelButtons_forCommission() {
@@ -87,10 +91,12 @@ async function createPrivateTicketChannel(guild, type, userId, initialEmbed, com
     { id: userId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
 
+  // Always give general staff access if configured
   if (STAFF_ROLE_ID) {
     permissionOverwrites.push({ id: STAFF_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
   }
 
+  // Add a manager role specific to this ticket type (e.g., admin role for admin tickets)
   const managerRoleId = MANAGER_ROLE_BY_TYPE[type];
   if (managerRoleId) {
     permissionOverwrites.push({ id: managerRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
@@ -113,6 +119,16 @@ client.on('interactionCreate', async (interaction) => {
       const [action, ticketType] = interaction.customId.split(':');
 
       if (action === 'open_ticket') {
+        // Fetch member and role flags
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        const isClient = CLIENTS_ROLE_ID && member && member.roles.cache.has(CLIENTS_ROLE_ID);
+        const isUnverified = UNVERIFIED_ROLE_ID && member && member.roles.cache.has(UNVERIFIED_ROLE_ID);
+
+        // Unverified members may only open support or admin tickets
+        if (isUnverified && !['support', 'admin'].includes(ticketType)) {
+          return interaction.reply({ content: 'Unverified members can only open Support or Admin Support tickets.', ephemeral: true });
+        }
+
         if (ticketType === 'commission') {
           const modal = new ModalBuilder().setCustomId(`commission_modal:${interaction.user.id}`).setTitle('Submit Commission');
 
