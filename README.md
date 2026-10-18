@@ -1,16 +1,29 @@
-## Hi there 👋
+# Radiance-Comms
 
-<!--
-**radiance-comms/Radiance-Comms** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+Multi-ticket commissions and moderation Discord bot scaffold built with Node.js and discord.js v14.
 
-Here are some ideas to get you started:
+Features
+- Panel-based ticket opening (commissions, support, admin support, partnerships, applications, events)
+- Commission modal with estimator and private ticket channel creation
+- Staff action buttons (Accept / Reject / Close)
+- SQLite storage (local bot-data.db)
+- Price estimator (configurable) with conversions to Nitro/Robux
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+Quick start
+1. Clone the repository:
+   git clone https://github.com/radiance-comms/Radiance-Comms.git
+2. Install dependencies:
+   npm install
+3. Create a .env file from .env.example and set DISCORD_TOKEN to your bot token (do NOT commit this):
+   cp .env.example .env
+   # then edit .env and add your DISCORD_TOKEN
+4. Start the bot:
+   npm start
+
+Notes
+- Ensure the bot has the proper intents (Guilds, GuildMessages, MessageContent if needed) and is invited with the applications.commands scope.
+- The bot stores data in a local SQLite database (bot-data.db). For production, consider moving to Postgres or a managed DB.
+- Do not share your bot token publicly. If it is leaked, rotate it immediately in the Developer Portal.
+
+Contributing
+If you want changes (transcripts, staff dashboard, TypeScript conversion), open an issue or request here and I can implement them.
