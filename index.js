@@ -123,10 +123,19 @@ client.on('interactionCreate', async (interaction) => {
         const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
         const isClient = CLIENTS_ROLE_ID && member && member.roles.cache.has(CLIENTS_ROLE_ID);
         const isUnverified = UNVERIFIED_ROLE_ID && member && member.roles.cache.has(UNVERIFIED_ROLE_ID);
+        const isStaff = STAFF_ROLE_ID && member && member.roles.cache.has(STAFF_ROLE_ID);
+        const isAdmin = member && member.permissions && member.permissions.has(PermissionsBitField.Flags.Administrator);
 
         // Unverified members may only open support or admin tickets
         if (isUnverified && !['support', 'admin'].includes(ticketType)) {
           return interaction.reply({ content: 'Unverified members can only open Support or Admin Support tickets.', ephemeral: true });
+        }
+
+        // Admin tickets: allow creation by Clients, Unverified (if you want), Staff, or server Administrators
+        if (ticketType === 'admin') {
+          if (!(isClient || isUnverified || isStaff || isAdmin)) {
+            return interaction.reply({ content: 'Only Clients, Unverified (support), staff, or server administrators can open Admin Support tickets.', ephemeral: true });
+          }
         }
 
         if (ticketType === 'commission') {
@@ -176,9 +185,9 @@ client.on('interactionCreate', async (interaction) => {
         const [, userIdFromCustom] = interaction.customId.split(':');
         const channel = interaction.channel;
         const member = await interaction.guild.members.fetch(interaction.user.id);
-        const isStaff = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
-        const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
-        if (!isStaff && !isAdmin) {
+        const isStaffClose = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
+        const isAdminClose = member.permissions.has(PermissionsBitField.Flags.Administrator);
+        if (!isStaffClose && !isAdminClose) {
           await interaction.editReply({ content: 'You do not have permission to close tickets.', ephemeral: true });
           return;
         }
