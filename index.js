@@ -58,10 +58,19 @@ function buildPanelButtons_generic() {
 }
 
 function buildPanelButtons_applications() {
+  const embed = new EmbedBuilder()
+    .setTitle('𓍢ִ໋ ✧˚ STAFF APPLICATIONS & INFORMATION')
+    .setDescription(
+`╭・welcome to radiance comms ✦\nThank you for your interest in joining the Radiance Comms team! We are looking for kind, dedicated, and active individuals who are passionate about helping our community grow and flourish. 🌈✨🌸\n\n┊・available positions 💧\nWe are currently accepting applications for:\n- 🌻 Moderator (Mod)\n- 🌈 Partnership Manager (PM)\n- 🌼 Event Host\n- 🦋 Social Media Manager (SMM)\n\n┊・requirements 🌿\nBefore applying, please make sure you meet the following requirements:\n- 🌸 Be respectful, mature, and professional\n- ☀️ Maintain a positive attitude toward members and staff\n- 🌱 Be reasonably active within the community\n- 🦋 Be able to work well as part of a team\n- 🌷 Follow all server rules and staff guidelines\n- 🌈 Be willing to learn, grow, and accept feedback\n- ☁️ Applications with low-effort responses may be denied\n\n┊・application process 🌼\n🌱 Step 1 — Choose Your Role: Select the position that best matches your skills and interests.\n🌸 Step 2 — Open an Application: Click the panel below to begin your application.\n🦋 Step 3 — Complete the Questions: Answer all questions honestly and in detail.\n🌻 Step 4 — Await Review: Our management team will review your application and contact you regarding their decision.\n\n╰・ready to bloom with us? 🌸\nClick the application panel below to begin your staff application. We can't wait to learn more about you and see how you can help Radiance Comms grow! ☁️✨🌈🌷🌻`
+    )
+    .setColor('#87CEEB')
+    .setFooter({ text: 'Radiance Comms • Staff Applications' });
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('open_ticket:application').setLabel('Open Application').setStyle(ButtonStyle.Primary)
   );
-  return { content: 'Open an application ticket here.', components: [row] };
+
+  return { embeds: [embed], components: [row] };
 }
 
 client.once('ready', async () => {
