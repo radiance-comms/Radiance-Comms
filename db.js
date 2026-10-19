@@ -78,11 +78,24 @@ function createTicketRecord(obj) {
   return nextId;
 }
 
+function updateTicketClose(ticketChannelId, closed_by, reason, transcript_path) {
+  const state = readState();
+  const index = state.tickets.findIndex((t) => t.ticket_channel_id === String(ticketChannelId));
+  if (index === -1) return false;
+  state.tickets[index].closed_at = new Date().toISOString();
+  state.tickets[index].closed_by = closed_by;
+  state.tickets[index].close_reason = reason || null;
+  state.tickets[index].transcript_path = transcript_path || null;
+  writeState(state);
+  return true;
+}
+
 module.exports = {
   init,
   createCommission,
   getCommission,
   updateCommissionStatus,
   setCommissionChannel,
-  createTicketRecord
+  createTicketRecord,
+  updateTicketClose
 };
