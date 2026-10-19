@@ -22,6 +22,11 @@ const UNVERIFIED_ROLE_ID = process.env.UNVERIFIED_ROLE_ID || null;
 const RADIANCE_OWNER_ROLE_ID = process.env.RADIANCE_OWNER_ROLE_ID || '1560802126748327936';
 const PREFIX = process.env.PREFIX || '!';
 
+// Staff role defaults (can be overridden in .env)
+const SUPPORT_TEAM_ROLE_ID = process.env.SUPPORT_TEAM_ROLE_ID || '1560878608933851236';
+const EVENTS_HR_ROLE_ID = process.env.EVENTS_HR_ROLE_ID || '1560878548816756766';
+const EVENTS_HOST_ROLE_ID = process.env.EVENTS_HOST_ROLE_ID || '1560806440556437515';
+
 const CATEGORY_MAP = {
   commission: process.env.COMMISSION_CATEGORY_ID,
   support: process.env.SUPPORT_CATEGORY_ID,
@@ -285,8 +290,34 @@ async function createPrivateTicketChannel(guild, type, userId, initialEmbed, com
     if (categoryId) createOptions.parent = categoryId;
 
     const channel = await guild.channels.create(createOptions);
-    const pingRole = type === 'commission' ? `<@&${RADIANCE_OWNER_ROLE_ID}> ` : '';
-    await channel.send({ content: `${pingRole}<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
+    // build staff pings based on ticket type
+    const pingRoles = [];
+    switch (type) {
+      case 'application':
+        if (ADMIN_ONLY_ROLE_ID) pingRoles.push(ADMIN_ONLY_ROLE_ID);
+        break;
+      case 'support':
+        if (SUPPORT_TEAM_ROLE_ID) pingRoles.push(SUPPORT_TEAM_ROLE_ID);
+        break;
+      case 'admin':
+        if (ADMIN_ONLY_ROLE_ID) pingRoles.push(ADMIN_ONLY_ROLE_ID);
+        break;
+      case 'event':
+        if (EVENTS_HR_ROLE_ID) pingRoles.push(EVENTS_HR_ROLE_ID);
+        if (EVENTS_HOST_ROLE_ID) pingRoles.push(EVENTS_HOST_ROLE_ID);
+        break;
+      case 'partnership':
+        if (PARTNER_MANAGER_ROLE_ID) pingRoles.push(PARTNER_MANAGER_ROLE_ID);
+        break;
+      case 'commission':
+        if (RADIANCE_OWNER_ROLE_ID) pingRoles.push(RADIANCE_OWNER_ROLE_ID);
+        break;
+      default:
+        if (STAFF_ROLE_ID) pingRoles.push(STAFF_ROLE_ID);
+    }
+
+    const pingMentions = pingRoles.length ? pingRoles.map(id => `<@&${id}>`).join(' ') + ' ' : '';
+    await channel.send({ content: `${pingMentions}<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
     return channel;
   } catch (err) {
     console.error('Failed to create channel with category:', err && err.message ? err.message : err);
@@ -294,8 +325,32 @@ async function createPrivateTicketChannel(guild, type, userId, initialEmbed, com
     if (categoryId) {
       try {
         const channel = await guild.channels.create({ name: sanitized, type: ChannelType.GuildText, permissionOverwrites });
-        const pingRole = type === 'commission' ? `<@&${RADIANCE_OWNER_ROLE_ID}> ` : '';
-        await channel.send({ content: `${pingRole}<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
+        const pingRoles = [];
+        switch (type) {
+          case 'application':
+            if (ADMIN_ONLY_ROLE_ID) pingRoles.push(ADMIN_ONLY_ROLE_ID);
+            break;
+          case 'support':
+            if (SUPPORT_TEAM_ROLE_ID) pingRoles.push(SUPPORT_TEAM_ROLE_ID);
+            break;
+          case 'admin':
+            if (ADMIN_ONLY_ROLE_ID) pingRoles.push(ADMIN_ONLY_ROLE_ID);
+            break;
+          case 'event':
+            if (EVENTS_HR_ROLE_ID) pingRoles.push(EVENTS_HR_ROLE_ID);
+            if (EVENTS_HOST_ROLE_ID) pingRoles.push(EVENTS_HOST_ROLE_ID);
+            break;
+          case 'partnership':
+            if (PARTNER_MANAGER_ROLE_ID) pingRoles.push(PARTNER_MANAGER_ROLE_ID);
+            break;
+          case 'commission':
+            if (RADIANCE_OWNER_ROLE_ID) pingRoles.push(RADIANCE_OWNER_ROLE_ID);
+            break;
+          default:
+            if (STAFF_ROLE_ID) pingRoles.push(STAFF_ROLE_ID);
+        }
+        const pingMentions = pingRoles.length ? pingRoles.map(id => `<@&${id}>`).join(' ') + ' ' : '';
+        await channel.send({ content: `${pingMentions}<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
         return channel;
       } catch (err2) {
         console.error('Fallback channel creation failed:', err2 && err2.message ? err2.message : err2);
@@ -716,11 +771,6 @@ client.on('interactionCreate', async (interaction) => {
             { name: 'Estimate (USD)', value: `$${commissionRecord.estimated_price}`, inline: true },
             { name: 'Features', value: features.length ? features.join(', ') : 'None', inline: false }
           ).setTimestamp();
-
-        const acceptBtn = new ButtonBuilder().setCustomId(`commission_accept:${commissionId}`).setLabel('Accept').setStyle(ButtonStyle.Success);
-        const rejectBtn = new ButtonBuilder().setCustomId(`commission_reject:${commissionId}`).setLabel('Reject').setStyle(ButtonStyle.Danger);
-        const closeBtn = new ButtonBuilder().setCustomId(`commission_close:${commissionId}`).setLabel('Close').setStyle(ButtonStyle.Secondary);
-        const rows = [new ActionRowBuilder().addComponents(acceptBtn, rejectBtn, closeBtn)];
 
         try {
           const ch = await createPrivateTicketChannel(interaction.guild, 'commission', userId, embed, rows);
