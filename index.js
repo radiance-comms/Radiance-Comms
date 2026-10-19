@@ -15,8 +15,10 @@ const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID || null;
 const ADMIN_ONLY_ROLE_ID = process.env.ADMIN_ONLY_ROLE_ID || null;
 const EVENTS_ROLE_ID = process.env.EVENTS_ROLE_ID || null;
 const PARTNER_MANAGER_ROLE_ID = process.env.PARTNER_MANAGER_ROLE_ID || null;
-const CLIENTS_ROLE_ID = process.env.CLIENTS_ROLE_ID || null; // can open all tickets
-const UNVERIFIED_ROLE_ID = process.env.UNVERIFIED_ROLE_ID || null; // limited to support/admin
+const CLIENTS_ROLE_ID = process.env.CLIENTS_ROLE_ID || null;
+const UNVERIFIED_ROLE_ID = process.env.UNVERIFIED_ROLE_ID || null;
+const RADIANCE_OWNER_ROLE_ID = process.env.RADIANCE_OWNER_ROLE_ID || '1560802126748327936';
+const PREFIX = process.env.PREFIX || '!';
 
 const CATEGORY_MAP = {
   commission: process.env.COMMISSION_CATEGORY_ID,
@@ -33,7 +35,6 @@ const PANEL_CHANNELS = {
   application: process.env.APPLICATION_PANEL_ID
 };
 
-// Map ticket type -> manager role. Include admin role so admins always have access to admin tickets.
 const MANAGER_ROLE_BY_TYPE = {
   partnership: PARTNER_MANAGER_ROLE_ID,
   event: EVENTS_ROLE_ID,
@@ -92,7 +93,6 @@ function buildPanelButtons_applications() {
 }
 
 function buildTicketEmbed(type, data = {}) {
-  // data may contain: title, description, server_count, features, position, about
   const e = new EmbedBuilder();
   e.setColor('#F6E4FF');
 
@@ -184,6 +184,20 @@ function buildTicketEmbed(type, data = {}) {
   return e;
 }
 
+function buildOpenTicketMsg(type, userId) {
+  const base = `Opening a ${type} ticket for <@${userId}>`;
+  if (type === 'commission') {
+    return `${base}\n<@&${RADIANCE_OWNER_ROLE_ID}>`;
+  }
+  return base;
+}
+
+async function createTicketFromType(guild, type, userId, data = {}, components = []) {
+  const embed = buildTicketEmbed(type, data);
+  const channel = await createPrivateTicketChannel(guild, type, userId, embed, components);
+  return channel;
+}
+
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
@@ -211,12 +225,10 @@ async function createPrivateTicketChannel(guild, type, userId, initialEmbed, com
     { id: userId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
   ];
 
-  // Always give general staff access if configured
   if (STAFF_ROLE_ID) {
     permissionOverwrites.push({ id: STAFF_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
   }
 
-  // Add a manager role specific to this ticket type (e.g., admin role for admin tickets)
   const managerRoleId = MANAGER_ROLE_BY_TYPE[type];
   if (managerRoleId) {
     permissionOverwrites.push({ id: managerRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
@@ -229,9 +241,125 @@ async function createPrivateTicketChannel(guild, type, userId, initialEmbed, com
     permissionOverwrites
   });
 
-  await channel.send({ content: `<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
+  const pingRole = type === 'commission' ? `<@&${RADIANCE_OWNER_ROLE_ID}> ` : '';
+  await channel.send({ content: `${pingRole}<@${userId}>`, embeds: initialEmbed ? [initialEmbed] : [], components });
   return channel;
 }
+
+function isStaffMember(member) {
+  if (!member) return false;
+  const hasStaffRole = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
+  const hasAdmin = member.permissions && member.permissions.has(PermissionsBitField.Flags.Administrator);
+  return Boolean(hasStaffRole || hasAdmin);
+}
+
+async function handleOpenCommand(msg, type) {
+  const guild = msg.guild;
+  if (!guild) return;
+
+  const member = msg.member;
+  const isClient = CLIENTS_ROLE_ID && member.roles.cache.has(CLIENTS_ROLE_ID);
+  const isUnverified = UNVERIFIED_ROLE_ID && member.roles.cache.has(UNVERIFIED_ROLE_ID);
+  const isStaff = isStaffMember(member);
+
+  if (isUnverified && !['support', 'admin'].includes(type)) {
+    return msg.reply({ content: 'Unverified members can only open Support or Admin Support tickets.' });
+  }
+
+  if (type === 'admin' && !(isClient || isUnverified || isStaff || member.permissions.has(PermissionsBitField.Flags.Administrator))) {
+    return msg.reply({ content: 'Only staff, clients, or admins may open Admin Support tickets.' });
+  }
+
+  if (type === 'commission') {
+    const modal = new ModalBuilder().setCustomId(`commission_modal:${msg.author.id}`).setTitle('Submit Commission');
+    const titleInput = new TextInputBuilder().setCustomId('title').setLabel('Short title').setStyle(TextInputStyle.Short).setRequired(true);
+    const descInput = new TextInputBuilder().setCustomId('description').setLabel('Describe the project (features, scope)').setStyle(TextInputStyle.Paragraph).setRequired(true);
+    const serversInput = new TextInputBuilder().setCustomId('server_count').setLabel('Server count (if server build)').setStyle(TextInputStyle.Short).setRequired(false);
+    const featuresInput = new TextInputBuilder().setCustomId('features').setLabel('Features (comma separated keys)').setStyle(TextInputStyle.Short).setRequired(false);
+    const row1 = new ActionRowBuilder().addComponents(titleInput);
+    const row2 = new ActionRowBuilder().addComponents(descInput);
+    const row3 = new ActionRowBuilder().addComponents(serversInput);
+    const row4 = new ActionRowBuilder().addComponents(featuresInput);
+    modal.addComponents(row1, row2, row3, row4);
+    return msg.author.send({ content: 'Open the modal to complete your commission request.' }).catch(() => null);
+  }
+
+  if (type === 'application') {
+    const modal = new ModalBuilder().setCustomId(`application_modal:${msg.author.id}`).setTitle('Submit Application');
+    const roleInput = new TextInputBuilder().setCustomId('role').setLabel('Which role/position are you applying for?').setStyle(TextInputStyle.Short).setRequired(true);
+    const answersInput = new TextInputBuilder().setCustomId('answers').setLabel('Tell us why you are a good fit (short)').setStyle(TextInputStyle.Paragraph).setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(roleInput), new ActionRowBuilder().addComponents(answersInput));
+    return msg.author.send({ content: 'Open the modal to complete your application.' }).catch(() => null);
+  }
+
+  const closeBtn = new ButtonBuilder().setCustomId(`ticket_close:${msg.author.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Secondary);
+  const row = new ActionRowBuilder().addComponents(closeBtn);
+  const ch = await createPrivateTicketChannel(guild, type, msg.author.id, buildTicketEmbed(type, {}), [row]);
+  db.createTicketRecord({ ticket_channel_id: ch.id, type, user_id: msg.author.id, commission_id: null, created_at: new Date().toISOString() });
+  return msg.reply({ content: `Ticket created: <#${ch.id}>`, allowedMentions: { repliedUser: false } });
+}
+
+client.on('messageCreate', async (msg) => {
+  if (msg.author.bot || !msg.guild) return;
+  if (!msg.content.startsWith(PREFIX)) return;
+
+  const args = msg.content.slice(PREFIX.length).trim().split(/\s+/);
+  const command = args.shift()?.toLowerCase();
+  const type = args[0]?.toLowerCase();
+
+  if (!command) return;
+
+  if (command === 'open') {
+    if (!type || !['commission','application','support','admin','partnership','event'].includes(type)) {
+      return msg.reply({ content: `Usage: ${PREFIX}open <commission|application|support|admin|partnership|event>` });
+    }
+    return handleOpenCommand(msg, type);
+  }
+
+  const validTicketTypes = ['commission','application','support','admin','partnership','event'];
+  const channelType = (msg.channel.name || '').split('-')[0];
+  if (!validTicketTypes.includes(channelType)) {
+    return; // ignore outside ticket channels
+  }
+
+  if (command === 'close') {
+    const member = msg.member;
+    const isOwner = msg.channel.permissionOverwrites.cache.get(msg.author.id)?.allow.has(PermissionsBitField.Flags.ViewChannel);
+    if (!isStaffMember(member) && !isOwner) {
+      return msg.reply({ content: 'You do not have permission to close this ticket.' });
+    }
+    await msg.channel.permissionOverwrites.edit(msg.author.id, { ViewChannel: false, SendMessages: false }).catch(() => null);
+    await msg.channel.send(`Ticket closed by <@${msg.author.id}>.`);
+    return msg.reply({ content: 'Ticket closed.', allowedMentions: { repliedUser: false } });
+  }
+
+  if (command === 'claim') {
+    if (!isStaffMember(msg.member)) {
+      return msg.reply({ content: 'Only staff/admins can claim tickets.' });
+    }
+    const managerRole = MANAGER_ROLE_BY_TYPE[channelType] || STAFF_ROLE_ID;
+    const ping = managerRole ? `<@&${managerRole}>` : '@here';
+    await msg.channel.send(`${ping} Ticket claimed by <@${msg.author.id}>.`);
+    return msg.reply({ content: 'Ticket claimed.', allowedMentions: { repliedUser: false } });
+  }
+
+  if (command === 'unclaim') {
+    if (!isStaffMember(msg.member)) {
+      return msg.reply({ content: 'Only staff/admins can unclaim tickets.' });
+    }
+    await msg.channel.send(`Ticket unclaimed by <@${msg.author.id}>.`);
+    return msg.reply({ content: 'Ticket unclaimed.', allowedMentions: { repliedUser: false } });
+  }
+
+  if (command === 'delete') {
+    if (!isStaffMember(msg.member)) {
+      return msg.reply({ content: 'Only staff/admins can delete tickets.' });
+    }
+    await msg.channel.send(`Deleting ticket channel in 5 seconds...`);
+    setTimeout(() => msg.channel.delete().catch(() => null), 5000);
+    return;
+  }
+});
 
 client.on('interactionCreate', async (interaction) => {
   try {
@@ -239,39 +367,32 @@ client.on('interactionCreate', async (interaction) => {
       const [action, ticketType] = interaction.customId.split(':');
 
       if (action === 'open_ticket') {
-        // Fetch member and role flags
         const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
         const isClient = CLIENTS_ROLE_ID && member && member.roles.cache.has(CLIENTS_ROLE_ID);
         const isUnverified = UNVERIFIED_ROLE_ID && member && member.roles.cache.has(UNVERIFIED_ROLE_ID);
-        const isStaff = STAFF_ROLE_ID && member && member.roles.cache.has(STAFF_ROLE_ID);
-        const isAdmin = member && member.permissions && member.permissions.has(PermissionsBitField.Flags.Administrator);
+        const isStaff = isStaffMember(member);
 
-        // Unverified members may only open support or admin tickets
         if (isUnverified && !['support', 'admin'].includes(ticketType)) {
           return interaction.reply({ content: 'Unverified members can only open Support or Admin Support tickets.', ephemeral: true });
         }
 
-        // Admin tickets: allow creation by Clients, Unverified (if you want), Staff, or server Administrators
         if (ticketType === 'admin') {
-          if (!(isClient || isUnverified || isStaff || isAdmin)) {
+          if (!(isClient || isUnverified || isStaff || member.permissions.has(PermissionsBitField.Flags.Administrator))) {
             return interaction.reply({ content: 'Only Clients, Unverified (support), staff, or server administrators can open Admin Support tickets.', ephemeral: true });
           }
         }
 
         if (ticketType === 'commission') {
           const modal = new ModalBuilder().setCustomId(`commission_modal:${interaction.user.id}`).setTitle('Submit Commission');
-
           const titleInput = new TextInputBuilder().setCustomId('title').setLabel('Short title').setStyle(TextInputStyle.Short).setRequired(true);
           const descInput = new TextInputBuilder().setCustomId('description').setLabel('Describe the project (features, scope)').setStyle(TextInputStyle.Paragraph).setRequired(true);
           const serversInput = new TextInputBuilder().setCustomId('server_count').setLabel('Server count (if server build)').setStyle(TextInputStyle.Short).setRequired(false);
           const featuresInput = new TextInputBuilder().setCustomId('features').setLabel('Features (comma separated keys)').setStyle(TextInputStyle.Short).setRequired(false);
-
           const row1 = new ActionRowBuilder().addComponents(titleInput);
           const row2 = new ActionRowBuilder().addComponents(descInput);
           const row3 = new ActionRowBuilder().addComponents(serversInput);
           const row4 = new ActionRowBuilder().addComponents(featuresInput);
           modal.addComponents(row1, row2, row3, row4);
-
           await interaction.showModal(modal);
           return;
         } else if (ticketType === 'application') {
@@ -284,15 +405,11 @@ client.on('interactionCreate', async (interaction) => {
         } else {
           await interaction.deferReply({ ephemeral: true });
           const guild = interaction.guild;
-
           const embed = buildTicketEmbed(ticketType, {});
-
           const closeBtn = new ButtonBuilder().setCustomId(`ticket_close:${interaction.user.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Secondary);
           const row = new ActionRowBuilder().addComponents(closeBtn);
-
           const ch = await createPrivateTicketChannel(guild, ticketType, interaction.user.id, embed, [row]);
-          const ticketId = db.createTicketRecord({ ticket_channel_id: ch.id, type: ticketType, user_id: interaction.user.id, commission_id: null, created_at: new Date().toISOString() });
-
+          db.createTicketRecord({ ticket_channel_id: ch.id, type: ticketType, user_id: interaction.user.id, commission_id: null, created_at: new Date().toISOString() });
           await interaction.editReply({ content: `Ticket created: <#${ch.id}>`, ephemeral: true });
           return;
         }
@@ -303,13 +420,10 @@ client.on('interactionCreate', async (interaction) => {
         const [, userIdFromCustom] = interaction.customId.split(':');
         const channel = interaction.channel;
         const member = await interaction.guild.members.fetch(interaction.user.id);
-        const isStaffClose = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
-        const isAdminClose = member.permissions.has(PermissionsBitField.Flags.Administrator);
-        if (!isStaffClose && !isAdminClose) {
+        if (!isStaffMember(member) && !channel.permissionOverwrites.cache.get(userIdFromCustom)) {
           await interaction.editReply({ content: 'You do not have permission to close tickets.', ephemeral: true });
           return;
         }
-
         await channel.permissionOverwrites.edit(userIdFromCustom, { ViewChannel: false, SendMessages: false }).catch(() => null);
         await channel.send(`Ticket closed by <@${interaction.user.id}>.`);
         await interaction.editReply({ content: 'Ticket closed.', ephemeral: true });
@@ -327,9 +441,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const member = await interaction.guild.members.fetch(interaction.user.id);
-        const isStaff = STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID);
-        const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
-        if (!isStaff && !isAdmin) {
+        if (!isStaffMember(member)) {
           await interaction.editReply({ content: 'You do not have permission to perform this action.', ephemeral: true });
           return;
         }
@@ -380,7 +492,6 @@ client.on('interactionCreate', async (interaction) => {
         const features_raw = interaction.fields.getTextInputValue('features') || '';
         const features = features_raw.split(',').map(f => f.trim()).filter(Boolean);
 
-        // build an order for estimator: use tier/commands as needed; here we estimate based on features and tier defaults
         const order = {
           type: 'a_la_carte',
           aestheticItems: [],
@@ -390,7 +501,6 @@ client.on('interactionCreate', async (interaction) => {
         };
 
         for (const f of features) order.customFeatures.push({ name: f, price: 0 });
-
         const estimate = estimateOrder(order, { taxRate: 0.0 });
 
         const commissionRecord = {
@@ -423,7 +533,6 @@ client.on('interactionCreate', async (interaction) => {
         const acceptBtn = new ButtonBuilder().setCustomId(`commission_accept:${commissionId}`).setLabel('Accept').setStyle(ButtonStyle.Success);
         const rejectBtn = new ButtonBuilder().setCustomId(`commission_reject:${commissionId}`).setLabel('Reject').setStyle(ButtonStyle.Danger);
         const closeBtn = new ButtonBuilder().setCustomId(`commission_close:${commissionId}`).setLabel('Close').setStyle(ButtonStyle.Secondary);
-
         const rows = [new ActionRowBuilder().addComponents(acceptBtn, rejectBtn, closeBtn)];
 
         const ch = await createPrivateTicketChannel(interaction.guild, 'commission', userId, embed, rows);
@@ -460,11 +569,7 @@ client.on('interactionCreate', async (interaction) => {
         const role = interaction.fields.getTextInputValue('role');
         const answers = interaction.fields.getTextInputValue('answers');
 
-        const embed = new EmbedBuilder()
-          .setTitle(`Application — ${role}`)
-          .setDescription(answers.slice(0, 4096))
-          .addFields({ name: 'Applicant', value: `<@${userId}>`, inline: true })
-          .setTimestamp();
+        const embed = buildTicketEmbed('application', { position: role, about: answers });
 
         const closeBtn = new ButtonBuilder().setCustomId(`ticket_close:${userId}`).setLabel('Close Ticket').setStyle(ButtonStyle.Secondary);
         const row = new ActionRowBuilder().addComponents(closeBtn);
